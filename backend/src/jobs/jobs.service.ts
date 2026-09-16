@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, MessageEvent } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateJobDto } from './dto/create-job.dto.js';
+import { GetJobsQueryDto } from './dto/get-jobs-query.dto.js';
 import { Job, JobStatus } from '@prisma/client';
+import { Observable, Subject } from 'rxjs';
 
 
 const requiredFromStatus: Partial<Record<JobStatus, JobStatus>> = {
@@ -21,8 +23,19 @@ const allowedTransitions: Record<JobStatus, JobStatus[]> = {
 @Injectable()
 export class JobsService {
   private readonly logger = new Logger(JobsService.name);
+  private readonly jobEvents = new Subject<MessageEvent>();
 
   constructor(private readonly prisma: PrismaService) {}
+
+  getJobEvents(): Observable<MessageEvent> {
+    return this.jobEvents.asObservable();
+  }
+
+  private publishJobsChanged(): void {
+    this.jobEvents.next({
+      data: { type: 'jobs-changed' },
+    });
+  }
 
   validateStatusTransition(currentStatus: JobStatus, requestedStatus: JobStatus): boolean {
     return allowedTransitions[currentStatus].includes(requestedStatus);
@@ -45,21 +58,55 @@ export class JobsService {
   }
 
   async createJob(dto: CreateJobDto): Promise<Job> {
-    return this.prisma.job.create({
+    const job = await this.prisma.job.create({
       data: {
         title: dto.title,
         type: dto.type,
         status: JobStatus.pending,
       },
     });
+
+    this.publishJobsChanged();
+    return job;
   }
 
-  async getJobs(): Promise<Job[]> {
-    return this.prisma.job.findMany({
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+  async getJobs(query: GetJobsQueryDto = new GetJobsQueryDto()) {
+    const { page, limit, status } = query;
+    const where = status ? { status } : {};
+    const [jobs, total, statusCounts] = await Promise.all([
+      this.prisma.job.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.job.count({ where }),
+      this.prisma.job.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+    ]);
+
+    const counts = {
+      all: statusCounts.reduce((sum, item) => sum + item._count._all, 0),
+      pending: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+    };
+
+    for (const item of statusCounts) {
+      counts[item.status] = item._count._all;
+    }
+
+    return {
+      data: jobs,
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      counts,
+    };
   }
 
   
@@ -104,7 +151,9 @@ export class JobsService {
       }
 
       // Return the freshly-updated record.
-      return this.prisma.job.findUnique({ where: { id } }) as Promise<Job>;
+      const updatedJob = await this.prisma.job.findUnique({ where: { id } }) as Job;
+      this.publishJobsChanged();
+      return updatedJob;
     } catch (error: any) {
       if (error instanceof NotFoundException || error instanceof ConflictException || error instanceof BadRequestException) {
         throw error;
@@ -127,6 +176,7 @@ export class JobsService {
       await this.prisma.job.delete({
         where: { id },
       });
+      this.publishJobsChanged();
     } catch (error: any) {
       if (error?.code === 'P2025') {
         throw new NotFoundException('Job not found');

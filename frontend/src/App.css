@@ -88,6 +88,10 @@
   gap: 12px;
 }
 
+.filter-panel h2 {
+  margin: 0 0 16px;
+}
+
 .filter-chip {
   display: flex;
   justify-content: space-between;
@@ -206,6 +210,14 @@ th {
 .muted {
   color: #64748b;
   font-size: 14px;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  padding-top: 20px;
 }
 
 @media (max-width: 820px) {

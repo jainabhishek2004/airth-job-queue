@@ -39,8 +39,8 @@ describe('JobsController', () => {
 
   describe('getJobs', () => {
     it('should call JobsService.getJobs', async () => {
-      await controller.getJobs();
-      expect(service.getJobs).toHaveBeenCalled();
+      await controller.getJobs({ page: 1, limit: 10 });
+      expect(service.getJobs).toHaveBeenCalledWith({ page: 1, limit: 10 });
     });
   });
 

@@ -19,3 +19,12 @@ export interface ApiError {
   message: string;
   status?: number;
 }
+
+export interface JobsResponse {
+  data: Job[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  counts: Record<JobStatusFilter, number>;
+}

@@ -1,6 +1,8 @@
-import { Controller, Get, Post, Body, Param, Delete, Patch, HttpCode, HttpStatus, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, Patch, HttpCode, HttpStatus, ParseUUIDPipe, Query, Sse, MessageEvent } from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { JobsService } from './jobs.service.js';
 import { CreateJobDto } from './dto/create-job.dto.js';
+import { GetJobsQueryDto } from './dto/get-jobs-query.dto.js';
 import { UpdateJobStatusDto } from './dto/update-job-status.dto.js';
 
 @Controller('jobs')
@@ -13,8 +15,13 @@ export class JobsController {
   }
 
   @Get()
-  getJobs() {
-    return this.jobsService.getJobs();
+  getJobs(@Query() query: GetJobsQueryDto) {
+    return this.jobsService.getJobs(query);
+  }
+
+  @Sse('events')
+  getEvents(): Observable<MessageEvent> {
+    return this.jobsService.getJobEvents();
   }
 
   @Patch(':id/status')

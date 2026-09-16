@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import './App.css';
 import { jobsApi } from './jobsApi';
 import type { ApiError, Job, JobStatus, JobStatusFilter } from './types';
 
 const STATUS_OPTIONS: Array<JobStatusFilter> = ['all', 'pending', 'running', 'completed', 'failed'];
+const PAGE_SIZE = 10;
 
 const statusLabels: Record<JobStatus, string> = {
   pending: 'Pending',
@@ -22,6 +23,15 @@ const allowedNextStatuses: Record<JobStatus, JobStatus[]> = {
 function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedFilter, setSelectedFilter] = useState<JobStatusFilter>('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [counts, setCounts] = useState<Record<JobStatusFilter, number>>({
+    all: 0,
+    pending: 0,
+    running: 0,
+    completed: 0,
+    failed: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
@@ -29,46 +39,47 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ title: '', type: '' });
 
-  const fetchJobs = async () => {
-    setLoading(true);
+  const fetchJobs = async (
+    requestedPage: number,
+    requestedFilter: JobStatusFilter,
+    showLoading = true,
+  ) => {
+    if (showLoading) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
-      const data = await jobsApi.getJobs();
-      setJobs(data);
+      const data = await jobsApi.getJobs(requestedPage, PAGE_SIZE, requestedFilter);
+      setJobs(data.data);
+      setPage(data.page);
+      setTotalPages(data.totalPages);
+      setCounts(data.counts);
     } catch (err) {
       const apiError = err as ApiError;
       setError(apiError.message || 'Unable to load jobs.');
     } finally {
-      setLoading(false);
+      if (showLoading) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    const loadJobs = async () => {
-      await fetchJobs();
+    queueMicrotask(() => void fetchJobs(1, selectedFilter));
+  }, [selectedFilter]);
+
+  useEffect(() => {
+    const eventSource = new EventSource(jobsApi.eventsUrl);
+    const handleJobsChanged = () => void fetchJobs(page, selectedFilter, false);
+
+    eventSource.addEventListener('message', handleJobsChanged);
+
+    return () => {
+      eventSource.removeEventListener('message', handleJobsChanged);
+      eventSource.close();
     };
-
-    void loadJobs();
-  }, []);
-
-  const counts = useMemo(() => {
-    return {
-      all: jobs.length,
-      pending: jobs.filter((job) => job.status === 'pending').length,
-      running: jobs.filter((job) => job.status === 'running').length,
-      completed: jobs.filter((job) => job.status === 'completed').length,
-      failed: jobs.filter((job) => job.status === 'failed').length,
-    };
-  }, [jobs]);
-
-  const filteredJobs = useMemo(() => {
-    if (selectedFilter === 'all') {
-      return jobs;
-    }
-
-    return jobs.filter((job) => job.status === selectedFilter);
-  }, [jobs, selectedFilter]);
+  }, [page, selectedFilter]);
 
   const handleCreateJob = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -82,12 +93,13 @@ function App() {
     setError(null);
 
     try {
-      const createdJob = await jobsApi.createJob({
+      await jobsApi.createJob({
         title: form.title.trim(),
         type: form.type.trim(),
       });
 
-      setJobs((currentJobs) => [createdJob, ...currentJobs]);
+      setSelectedFilter('all');
+      await fetchJobs(1, 'all', false);
       setForm({ title: '', type: '' });
     } catch (err) {
       const apiError = err as ApiError;
@@ -102,13 +114,9 @@ function App() {
     setError(null);
 
     try {
-      const updatedJob = await jobsApi.updateJobStatus(job.id, nextStatus);
+      await jobsApi.updateJobStatus(job.id, nextStatus);
 
-      setJobs((currentJobs) =>
-        currentJobs.map((currentJob) =>
-          currentJob.id === updatedJob.id ? updatedJob : currentJob,
-        ),
-      );
+      await fetchJobs(page, selectedFilter, false);
     } catch (err) {
       const apiError = err as ApiError;
       setError(apiError.message || 'Unable to update job status.');
@@ -123,7 +131,7 @@ function App() {
 
     try {
       await jobsApi.deleteJob(jobId);
-      setJobs((currentJobs) => currentJobs.filter((job) => job.id !== jobId));
+      await fetchJobs(page, selectedFilter, false);
     } catch (err) {
       const apiError = err as ApiError;
       setError(apiError.message || 'Unable to delete job.');
@@ -172,7 +180,9 @@ function App() {
         </form>
       </section>
 
-      <section className="panel stats-panel" aria-label="Job status summary">
+      <section className="panel filter-panel" aria-labelledby="job-filter-heading">
+        <h2 id="job-filter-heading">Filter jobs</h2>
+        <div className="stats-panel">
         {STATUS_OPTIONS.map((status) => (
           <button
             key={status}
@@ -184,6 +194,7 @@ function App() {
             <strong>{counts[status]}</strong>
           </button>
         ))}
+        </div>
       </section>
 
       {error && <div className="error-banner">{error}</div>}
@@ -191,7 +202,7 @@ function App() {
       <section className="panel table-panel">
         {loading ? (
           <div className="state-box">Loading jobs...</div>
-        ) : filteredJobs.length === 0 ? (
+        ) : jobs.length === 0 ? (
           <div className="state-box">No jobs match the selected status.</div>
         ) : (
           <div className="table-wrap">
@@ -206,7 +217,7 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {filteredJobs.map((job) => {
+                {jobs.map((job) => {
                   const nextStatuses = allowedNextStatuses[job.status] ?? [];
 
                   return (
@@ -251,6 +262,27 @@ function App() {
               </tbody>
             </table>
           </div>
+        )}
+        {totalPages > 1 && (
+          <nav className="pagination" aria-label="Job list pagination">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={page === 1 || loading}
+              onClick={() => void fetchJobs(page - 1, selectedFilter)}
+            >
+              Previous
+            </button>
+            <span>Page {page} of {totalPages}</span>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={page === totalPages || loading}
+              onClick={() => void fetchJobs(page + 1, selectedFilter)}
+            >
+              Next
+            </button>
+          </nav>
         )}
       </section>
     </main>

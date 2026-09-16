@@ -1,6 +1,6 @@
-import type { ApiError, CreateJobInput, Job, JobStatus } from './types';
+import type { ApiError, CreateJobInput, Job, JobsResponse, JobStatus, JobStatusFilter } from './types';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
 async function parseResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
@@ -26,9 +26,15 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 export const jobsApi = {
-  async getJobs(): Promise<Job[]> {
-    const response = await fetch(`${API_BASE_URL}/jobs`);
-    return parseResponse<Job[]>(response);
+  eventsUrl: `${API_BASE_URL}/jobs/events`,
+  async getJobs(page = 1, limit = 10, status: JobStatusFilter = 'all'): Promise<JobsResponse> {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status !== 'all') {
+      params.set('status', status);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/jobs?${params}`);
+    return parseResponse<JobsResponse>(response);
   },
 
   async createJob(payload: CreateJobInput): Promise<Job> {

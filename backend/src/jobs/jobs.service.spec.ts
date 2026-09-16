@@ -19,6 +19,8 @@ describe('JobsService', () => {
             job: {
               create: vi.fn(),
               findMany: vi.fn(),
+              count: vi.fn(),
+              groupBy: vi.fn(),
               delete: vi.fn(),
               findUnique: vi.fn(),
               update: vi.fn(),
@@ -58,15 +60,21 @@ describe('JobsService', () => {
   });
 
   describe('getJobs', () => {
-    it('should return an array of jobs sorted by createdAt desc', async () => {
+    it('should return a paginated result sorted by createdAt desc', async () => {
       const jobs = [{ id: '00000000-0000-0000-0000-000000000001', title: 'Test', type: 'email', status: JobStatus.pending, createdAt: new Date() }];
       (prisma.job.findMany as any).mockResolvedValue(jobs);
+      (prisma.job.count as any).mockResolvedValue(1);
+      (prisma.job.groupBy as any).mockResolvedValue([{ status: JobStatus.pending, _count: { _all: 1 } }]);
 
       const result = await service.getJobs();
       
-      expect(result).toEqual(jobs);
+      expect(result.data).toEqual(jobs);
+      expect(result.total).toBe(1);
       expect(prisma.job.findMany).toHaveBeenCalledWith({
+        where: {},
         orderBy: { createdAt: 'desc' },
+        skip: 0,
+        take: 10,
       });
     });
   });
