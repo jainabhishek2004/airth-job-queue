@@ -99,6 +99,28 @@ The service performs this with Prisma `updateMany` and checks the affected-row c
 
 This protection still applies when a caller bypasses React and calls the API directly. The frontend hides invalid actions for convenience, but the API and conditional database update are the authority.
 
+## Assumptions and Trade-offs
+
+- Jobs are stored as database records; there is no separate worker process or background execution system in this assignment.
+- Status transitions are intentionally limited to the defined state machine. Jobs do not automatically advance without an API request.
+- The dashboard listens for server-sent job-change events so updates from other browsers can refresh the current view without periodic polling.
+- PostgreSQL is the source of truth for concurrency decisions. The follow-up read after a successful conditional update returns the updated record to the client.
+
+## Bonus Production-Ready Improvements
+
+### Strict API validation
+
+Global NestJS validation transforms query values, rejects unknown properties, and works with DTO rules for required fields, allowed enum values, length limits, and UUID route parameters. This prevents malformed or unexpected input from reaching the persistence layer and gives clients consistent HTTP errors.
+
+### Pagination
+
+Pagination was implemented in both the backend and frontend. The backend uses Prisma `skip` and `take`, validates `page` and `limit`, supports a maximum page size, and returns total-page metadata. The frontend requests only the current page and provides Previous/Next controls, avoiding the need to load the entire job list into the browser.
+
+### Server-sent events
+
+As an additional improvement, the API exposes `GET /jobs/events` as an SSE stream. Successful create, status-update, and delete operations publish a `jobs-changed` event, and connected frontends refetch their current page. SSE is an in-memory notification mechanism in this assignment; PostgreSQL remains the source of truth, and a production multi-instance deployment would use a shared event broker for guaranteed fan-out.
+
+
 ## Local Setup
 
 ### Backend
@@ -161,12 +183,7 @@ The frontend and backend are deployed separately and are available at the links 
 
 Before submission, redeploy both applications from the current repository state and smoke-test `GET /jobs?page=1&limit=1` and `GET /jobs/events`. The live URLs above are reachable, but the deployed backend must expose the current paginated response and SSE endpoint to match this README.
 
-## Assumptions and Trade-offs
 
-- Jobs are stored as database records; there is no separate worker process or background execution system in this assignment.
-- Status transitions are intentionally limited to the defined state machine. Jobs do not automatically advance without an API request.
-- The dashboard listens for server-sent job-change events so updates from other browsers can refresh the current view without periodic polling.
-- PostgreSQL is the source of truth for concurrency decisions. The follow-up read after a successful conditional update returns the updated record to the client.
 
 ## Tests and Verification
 
@@ -200,16 +217,3 @@ npm run lint
 npm run build
 ```
 
-## Bonus Production-Ready Improvements
-
-### Strict API validation
-
-Global NestJS validation transforms query values, rejects unknown properties, and works with DTO rules for required fields, allowed enum values, length limits, and UUID route parameters. This prevents malformed or unexpected input from reaching the persistence layer and gives clients consistent HTTP errors.
-
-### Pagination
-
-Pagination was implemented in both the backend and frontend. The backend uses Prisma `skip` and `take`, validates `page` and `limit`, supports a maximum page size, and returns total-page metadata. The frontend requests only the current page and provides Previous/Next controls, avoiding the need to load the entire job list into the browser.
-
-### Server-sent events
-
-As an additional improvement, the API exposes `GET /jobs/events` as an SSE stream. Successful create, status-update, and delete operations publish a `jobs-changed` event, and connected frontends refetch their current page. SSE is an in-memory notification mechanism in this assignment; PostgreSQL remains the source of truth, and a production multi-instance deployment would use a shared event broker for guaranteed fan-out.
