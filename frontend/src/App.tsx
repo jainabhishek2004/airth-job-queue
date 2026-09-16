@@ -181,7 +181,7 @@ function App() {
       </section>
 
       <section className="panel filter-panel" aria-labelledby="job-filter-heading">
-        <h2 id="job-filter-heading">Filter jobs</h2>
+        <h2 id="job-filter-heading">Filter Jobs by status</h2>
         <div className="stats-panel">
         {STATUS_OPTIONS.map((status) => (
           <button
