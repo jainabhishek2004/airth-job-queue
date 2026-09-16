@@ -106,6 +106,17 @@ This protection still applies when a caller bypasses React and calls the API dir
 - The dashboard listens for server-sent job-change events so updates from other browsers can refresh the current view without periodic polling.
 - PostgreSQL is the source of truth for concurrency decisions. The follow-up read after a successful conditional update returns the updated record to the client.
 
+### Edge cases covered
+
+- Blank, wrong-type, oversized, and extra create fields.
+- Invalid status values and unsupported transitions.
+- Malformed and non-existent UUIDs.
+- Attempts to move terminal jobs back to `running`.
+- Concurrent requests trying to perform the same transition.
+- Empty result pages and status filters with no matching jobs.
+- API loading and error states in the frontend.
+
+
 ## Bonus Production-Ready Improvements
 
 ### Strict API validation
@@ -200,15 +211,6 @@ The test suite covers job creation, listing, deletion, valid and invalid transit
 
 The live PostgreSQL e2e suite requires a reachable `DATABASE_URL`. The longer timeout is intentional because a hosted database may need more than Vitest's default 5 seconds during connection or cold-start work.
 
-### Edge cases covered
-
-- Blank, wrong-type, oversized, and extra create fields.
-- Invalid status values and unsupported transitions.
-- Malformed and non-existent UUIDs.
-- Attempts to move terminal jobs back to `running`.
-- Concurrent requests trying to perform the same transition.
-- Empty result pages and status filters with no matching jobs.
-- API loading and error states in the frontend.
 
 From `frontend`:
 
